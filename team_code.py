@@ -137,7 +137,7 @@ def run_model(model, header, recording):
         recording = resample(recording,4000,axis=1)
         image+=[generate_image(recording,leads)]
     probabilities = model.predict(np.array(image))
-    labels = (np.bitwise_or.reduce(probabilities>0.2,axis=0)*1).reshape(26)
+    labels = (np.bitwise_or.reduce(probabilities>0.3,axis=0)*1).reshape(26)
     probabilities = np.mean(probabilities,axis=0).reshape(26)
     return classes, labels, probabilities
 
