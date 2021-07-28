@@ -1,8 +1,8 @@
 import numpy as np
 from helper_code import *
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Conv1D, Dropout, AveragePooling1D, GlobalAveragePooling1D, SpatialDropout1D
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Conv1D, Dropout, AveragePooling1D, GlobalAveragePooling1D, SpatialDropout1D, Input, Concatenate
+from tensorflow.keras.models import Model
 from scipy.fft import fft
 from scipy.signal import resample
 import tensorflow.keras.backend as K
@@ -75,10 +75,11 @@ def training_code(data_directory, model_directory):
             image_raw = parsed_example['image']
             image = tf.io.decode_raw(image_raw, tf.float32)
             image = tf.reshape(image, shape=image_shape)
-            image = tf.experimental.numpy.take(image,indices(leads),axis=-1)
+            signal = tf.experimental.numpy.take(image,indices(leads)[0],axis=-1)
+            image = tf.experimental.numpy.take(image,indices(leads)[1],axis=-1)
             label = tf.io.decode_raw(label_raw, tf.float32)
             label = tf.reshape(label, shape=label_shape)
-            return image,label
+            return {'signal':signal,'fft':image}, label
 
         AUTOTUNE=tf.data.AUTOTUNE
         train_files = tf.io.matching_files('processed_train*.tfrecord')
@@ -112,8 +113,9 @@ def run_model(model, header, recording):
         recording = resample(recording,2000,axis=1)
         image = np.vstack((recording,mag,angle))
         image = np.transpose(image,(1,0)).astype(np.float32)
-        image = np.take(image,indices_predicting(leads),axis=-1)
-        return image
+        signal = np.take(image,indices_predicting(leads)[0],axis=-1)
+        image = np.take(image,indices_predicting(leads)[1],axis=-1)
+        return signal,image
 
     classes=np.array(["164889003","164890007","6374002","426627000","733534002","713427006","270492004","713426002","39732003","445118002","251146004","698252002","426783006","284470004","10370003","365413008","427172004","164947007","111975006","164917005","47665007","427393009","426177001","427084000","164934002","59931005"])
     frequency=int(get_frequency(header))
@@ -133,11 +135,14 @@ def run_model(model, header, recording):
         final_recording_list+=[recording]
     final_recording_list=np.array(final_recording_list)
     image=[]
+    signal=[]
     for recording in final_recording_list:
         recording = resample(recording,4000,axis=1)
-        image+=[generate_image(recording,leads)]
-    probabilities = model.predict(np.array(image))
-    labels = (np.bitwise_or.reduce(probabilities>0.3,axis=0)*1).reshape(26)
+        signal_temp,image_temp = generate_image(recording,leads)
+        signal+=[signal_temp]
+        image+=[image_temp]
+    probabilities = model.predict([np.array(signal),np.array(image)])
+    labels = (np.bitwise_or.reduce(probabilities>0.2,axis=0)*1).reshape(26)
     probabilities = np.mean(probabilities,axis=0).reshape(26)
     return classes, labels, probabilities
 
@@ -149,155 +154,101 @@ def load_model(model_directory, leads):
     return model
 
 def create_model(leads):
-    
-    if leads==twelve_leads:
-        model = Sequential()
-        model.add(Conv1D(filters=72, kernel_size=3, activation='swish', input_shape=(2000,36)))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=144, kernel_size=5, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=288, kernel_size=7, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=576, kernel_size=9, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(GlobalAveragePooling1D())
-        model.add(Dense(1152, activation='swish'))
-        model.add(Dropout(0.5))
-        model.add(Dense(26,activation = 'sigmoid', kernel_initializer='glorot_uniform'))
-        AUROC = tf.keras.metrics.AUC(curve='ROC', name = 'AUROC',multi_label = True)
-        AUPRC = tf.keras.metrics.AUC(curve='PR', name = 'AUPRC',multi_label = True)
-        model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy', AUROC, AUPRC])
-        return model
-    elif leads==six_leads:
-        model = Sequential()
-        model.add(Conv1D(filters=72, kernel_size=3, activation='swish', input_shape=(2000,18)))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=144, kernel_size=5, activation='swish'))
-        model.add(SpatialDropout1D(0.1))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=288, kernel_size=7, activation='swish'))
-        model.add(SpatialDropout1D(0.1))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=576, kernel_size=9, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(GlobalAveragePooling1D())
-        model.add(Dense(1152, activation='swish'))
-        model.add(Dropout(0.5))
-        model.add(Dense(26,activation = 'sigmoid', kernel_initializer='glorot_uniform'))
-        AUROC = tf.keras.metrics.AUC(curve='ROC', name = 'AUROC',multi_label = True)
-        AUPRC = tf.keras.metrics.AUC(curve='PR', name = 'AUPRC',multi_label = True)
-        model.compile(optimizer='RMSprop',loss='binary_crossentropy',metrics=['accuracy', AUROC, AUPRC])
-    elif leads==four_leads:
-        model = Sequential()
-        model.add(Conv1D(filters=72, kernel_size=3, activation='swish', input_shape=(2000,12)))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=144, kernel_size=5, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=288, kernel_size=7, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=576, kernel_size=9, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(GlobalAveragePooling1D())
-        model.add(Dense(1152, activation='swish'))
-        model.add(Dropout(0.5))
-        model.add(Dense(26,activation = 'sigmoid', kernel_initializer='glorot_uniform'))
-        AUROC = tf.keras.metrics.AUC(curve='ROC', name = 'AUROC',multi_label = True)
-        AUPRC = tf.keras.metrics.AUC(curve='PR', name = 'AUPRC',multi_label = True)
-        model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy', AUROC, AUPRC])
-    elif leads==three_leads:
-        model = Sequential()
-        model.add(Conv1D(filters=72, kernel_size=3, activation='swish', input_shape=(2000,9)))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=144, kernel_size=5, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=288, kernel_size=7, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=576, kernel_size=9, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(GlobalAveragePooling1D())
-        model.add(Dense(1152, activation='swish'))
-        model.add(Dropout(0.5))
-        model.add(Dense(26,activation = 'sigmoid', kernel_initializer='glorot_uniform'))
-        AUROC = tf.keras.metrics.AUC(curve='ROC', name = 'AUROC',multi_label = True)
-        AUPRC = tf.keras.metrics.AUC(curve='PR', name = 'AUPRC',multi_label = True)
-        model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy', AUROC, AUPRC])
-    else:
-        model = Sequential()
-        model.add(Conv1D(filters=72, kernel_size=3, activation='swish', input_shape=(2000,6)))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=144, kernel_size=5, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=288, kernel_size=7, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(AveragePooling1D(pool_size=2))
-        model.add(Conv1D(filters=576, kernel_size=9, activation='swish'))
-        model.add(SpatialDropout1D(0.2))
-        model.add(GlobalAveragePooling1D())
-        model.add(Dense(1152, activation='swish'))
-        model.add(Dropout(0.5))
-        model.add(Dense(26,activation = 'sigmoid', kernel_initializer='glorot_uniform'))
-        AUROC = tf.keras.metrics.AUC(curve='ROC', name = 'AUROC',multi_label = True)
-        AUPRC = tf.keras.metrics.AUC(curve='PR', name = 'AUPRC',multi_label = True)
-        model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy', AUROC, AUPRC])
+    i = Input((2000,len(leads)), name='signal')
+    x = Conv1D(filters=72, kernel_size=3, activation='swish')(i)
+    x = SpatialDropout1D(0.2)(x)
+    x = AveragePooling1D(pool_size=2)(x)
+    x = Conv1D(filters=144, kernel_size=5, activation='swish')(x)
+    x = SpatialDropout1D(0.2)(x)
+    x = AveragePooling1D(pool_size=2)(x)
+    x = Conv1D(filters=288, kernel_size=7, activation='swish')(x)
+    x = SpatialDropout1D(0.2)(x)
+    x = AveragePooling1D(pool_size=2)(x)
+    x = Conv1D(filters=576, kernel_size=9, activation='swish')(x)
+    x = SpatialDropout1D(0.2)(x)
+    x = GlobalAveragePooling1D()(x)
+
+    j = Input((2000,2*len(leads)), name='fft')
+    y = Conv1D(filters=72, kernel_size=3, activation='swish')(j)
+    y = SpatialDropout1D(0.2)(y)
+    y = AveragePooling1D(pool_size=2)(y)
+    y = Conv1D(filters=144, kernel_size=5, activation='swish')(y)
+    y = SpatialDropout1D(0.2)(y)
+    y = AveragePooling1D(pool_size=2)(y)
+    y = Conv1D(filters=288, kernel_size=7, activation='swish')(y)
+    y = SpatialDropout1D(0.2)(y)
+    y = AveragePooling1D(pool_size=2)(y)
+    y = Conv1D(filters=576, kernel_size=9, activation='swish')(y)
+    y = SpatialDropout1D(0.2)(y)
+    y = GlobalAveragePooling1D()(y)
+
+    f = Concatenate()([x,y])
+
+    f = Dense(1152, activation='swish')(f)
+    f = Dropout(0.5)(f)
+    f = Dense(26,activation = 'sigmoid', kernel_initializer='glorot_uniform')(f)
+    AUROC = tf.keras.metrics.AUC(curve='ROC', name = 'AUROC',multi_label = True)
+    AUPRC = tf.keras.metrics.AUC(curve='PR', name = 'AUPRC',multi_label = True)
+
+    model = Model([i,j],f)
+    model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy', AUROC, AUPRC])
     return model
 
 def indices(leads):
     if leads==twelve_leads:
-        pos = [0,12,24,1,13,25,2,14,26,3,15,27,4,16,28,5,17,29,6,18,30,7,19,31,8,20,32,9,21,33,10,22,34,11,23,35]
+        pos1 = [0,1,2,3,4,5,6,7,8,9,10,11]
+        pos2 = [12,24,13,25,14,26,15,27,16,28,17,29,18,30,19,31,20,32,21,33,22,34,23,35]
     elif leads==six_leads:
-        pos = [0,12,24,1,13,25,2,14,26,3,15,27,4,16,28,5,17,29]
+        pos1 = [0,1,2,3,4,5]
+        pos2 = [12,24,13,25,14,26,15,27,16,28,17,29]
     elif leads==four_leads:
-        pos = [0,12,24,1,13,25,2,14,26,7,19,31]
+        pos1 = [0,1,2,7]
+        pos2 = [12,24,13,25,14,26,19,31]
     elif leads==three_leads:
-        pos = [0,12,24,1,13,25,7,19,31]
+        pos1 = [0,1,7]
+        pos2 = [12,24,13,25,19,31]
     else:
-        pos = [0,12,24,1,13,25]
-    return pos
+        pos1 = [0,1]
+        pos2 = [12,24,13,25]
+    return pos1,pos2
 
 def indices_predicting(leads):
     if leads==twelve_leads:
-        pos = [0,12,24,1,13,25,2,14,26,3,15,27,4,16,28,5,17,29,6,18,30,7,19,31,8,20,32,9,21,33,10,22,34,11,23,35]
+        pos1 = [0,1,2,3,4,5,6,7,8,9,10,11]
+        pos2 = [12,24,13,25,14,26,15,27,16,28,17,29,18,30,19,31,20,32,21,33,22,34,23,35]
     elif leads==six_leads:
-        pos = [0,6,12,1,7,13,2,8,14,3,9,15,4,10,16,5,11,17]
+        pos1 = [0,1,2,3,4,5]
+        pos2 = [6,12,7,13,8,14,9,15,10,16,11,17]
     elif leads==four_leads:
-        pos = [0,4,8,1,5,9,2,6,10,3,7,11]
+        pos1 = [0,1,2,3]
+        pos2 = [4,8,5,9,6,10,7,11]
     elif leads==three_leads:
-        pos = [0,3,6,1,4,7,2,5,8]
+        pos1 = [0,1,2]
+        pos2 = [3,6,4,7,5,8]
     else:
-        pos = [0,2,4,1,3,5]
-    return pos
+        pos1 = [0,1]
+        pos2 = [2,4,3,5]
+    return pos1,pos2
 
 def epoch_data(leads,model,train_dataset):
     if leads==twelve_leads:
-        model.fit(train_dataset, epochs=24)
+        model.fit(train_dataset, epochs=19)
         K.set_value(model.optimizer.learning_rate, 0.0001)
         model.fit(train_dataset,epochs=4)
     elif leads==six_leads:
-        model.fit(train_dataset, epochs=18)
+        model.fit(train_dataset, epochs=14)
         K.set_value(model.optimizer.learning_rate, 0.0001)
-        model.fit(train_dataset,epochs=3)
+        model.fit(train_dataset,epochs=5)
     elif leads==four_leads:
-        model.fit(train_dataset, epochs=29)
+        model.fit(train_dataset, epochs=18)
         K.set_value(model.optimizer.learning_rate, 0.0001)
         model.fit(train_dataset,epochs=2)
     elif leads==three_leads:
-        model.fit(train_dataset, epochs=30)
+        model.fit(train_dataset, epochs=20)
         K.set_value(model.optimizer.learning_rate, 0.0001)
-        model.fit(train_dataset,epochs=4)
+        model.fit(train_dataset,epochs=3)
     else:
-        model.fit(train_dataset, epochs=30)
+        model.fit(train_dataset, epochs=22)
         K.set_value(model.optimizer.learning_rate, 0.0001)
-        model.fit(train_dataset,epochs=6)
+        model.fit(train_dataset,epochs=5)
     return model
