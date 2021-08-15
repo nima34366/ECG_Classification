@@ -1,7 +1,7 @@
 import numpy as np
 from helper_code import *
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Conv1D, Dropout, AveragePooling1D, GlobalAveragePooling1D, SpatialDropout1D, Input, Concatenate
+from tensorflow.keras.layers import Dense, Conv1D, Dropout, AveragePooling1D, GlobalAveragePooling1D, SpatialDropout1D, Input, Concatenate, Add, Activation
 from tensorflow.keras.models import Model
 from scipy.fft import fft
 from scipy.signal import resample
@@ -142,7 +142,7 @@ def run_model(model, header, recording):
         signal+=[signal_temp]
         image+=[image_temp]
     probabilities = model.predict([np.array(signal),np.array(image)])
-    labels = (np.bitwise_or.reduce(probabilities>0.2,axis=0)*1).reshape(26)
+    labels = (np.bitwise_or.reduce(probabilities>0.13,axis=0)*1).reshape(26)
     probabilities = np.mean(probabilities,axis=0).reshape(26)
     return classes, labels, probabilities
 
@@ -155,41 +155,56 @@ def load_model(model_directory, leads):
 
 def create_model(leads):
     i = Input((2000,len(leads)), name='signal')
-    x = Conv1D(filters=72, kernel_size=3, activation='swish')(i)
-    x = SpatialDropout1D(0.2)(x)
-    x = AveragePooling1D(pool_size=2)(x)
-    x = Conv1D(filters=144, kernel_size=5, activation='swish')(x)
-    x = SpatialDropout1D(0.2)(x)
-    x = AveragePooling1D(pool_size=2)(x)
-    x = Conv1D(filters=288, kernel_size=7, activation='swish')(x)
-    x = SpatialDropout1D(0.2)(x)
-    x = AveragePooling1D(pool_size=2)(x)
-    x = Conv1D(filters=576, kernel_size=9, activation='swish')(x)
-    x = SpatialDropout1D(0.2)(x)
-    x = GlobalAveragePooling1D()(x)
+    x = Conv1D(filters=72, kernel_size=15, activation='swish', padding='same')(i)
+    a = Conv1D(filters=72, kernel_size=1, padding='same')(i)
+    a = Add()([a,x])
+    a = Activation('swish')(a)
+    x = SpatialDropout1D(0.2)(a)
+    b = AveragePooling1D(pool_size=2)(x)
+    x = Conv1D(filters=144, kernel_size=3, activation='swish', padding='same')(b)
+    a = Conv1D(filters=144, kernel_size=1, padding='same')(b)
+    a = Add()([a,x])
+    a = Activation('swish')(a)
+    x = SpatialDropout1D(0.2)(a)
+    b = AveragePooling1D(pool_size=2)(x)
+    x = Conv1D(filters=288, kernel_size=5, activation='swish', padding='same')(b)
+    a = Conv1D(filters=288, kernel_size=1, padding='same')(b)
+    a = Add()([a,x])
+    a = Activation('swish')(a)
+    x = SpatialDropout1D(0.2)(a)
+    b = AveragePooling1D(pool_size=2)(x)
+    x = Conv1D(filters=576, kernel_size=7, activation='swish', padding='same')(b)
+    a = Conv1D(filters=576, kernel_size=1, padding='same')(b)
+    a = Add()([a,x])
+    a = Activation('swish')(a)
+    b = SpatialDropout1D(0.2)(a)
+    x = GlobalAveragePooling1D()(b)
 
     j = Input((2000,2*len(leads)), name='fft')
-    y = Conv1D(filters=72, kernel_size=3, activation='swish')(j)
-    y = SpatialDropout1D(0.2)(y)
+    y = Conv1D(filters=72, kernel_size=3, activation='swish', padding='same')(j)
+    y = SpatialDropout1D(0.1)(y)
     y = AveragePooling1D(pool_size=2)(y)
-    y = Conv1D(filters=144, kernel_size=5, activation='swish')(y)
-    y = SpatialDropout1D(0.2)(y)
+    y = Conv1D(filters=144, kernel_size=5, activation='swish', padding='same')(y)
+    y = SpatialDropout1D(0.1)(y)
     y = AveragePooling1D(pool_size=2)(y)
-    y = Conv1D(filters=288, kernel_size=7, activation='swish')(y)
-    y = SpatialDropout1D(0.2)(y)
+    y = Conv1D(filters=288, kernel_size=7, activation='swish', padding='same')(y)
+    y = SpatialDropout1D(0.1)(y)
     y = AveragePooling1D(pool_size=2)(y)
-    y = Conv1D(filters=576, kernel_size=9, activation='swish')(y)
-    y = SpatialDropout1D(0.2)(y)
+    y = Conv1D(filters=576, kernel_size=9, activation='swish', padding='same')(y)
+    y = SpatialDropout1D(0.1)(y)
+    y = AveragePooling1D(pool_size=2)(y)
+    y = Conv1D(filters=1152, kernel_size=11, activation='swish', padding='same')(y)
+    y = SpatialDropout1D(0.1)(y)
     y = GlobalAveragePooling1D()(y)
 
     f = Concatenate()([x,y])
+    f = Activation('swish')(f)
 
-    f = Dense(1152, activation='swish')(f)
+    f = Dense(576, activation='swish')(f)
     f = Dropout(0.5)(f)
-    f = Dense(26,activation = 'sigmoid', kernel_initializer='glorot_uniform')(f)
+    f = Dense(26,activation = 'sigmoid')(f)
     AUROC = tf.keras.metrics.AUC(curve='ROC', name = 'AUROC',multi_label = True)
     AUPRC = tf.keras.metrics.AUC(curve='PR', name = 'AUPRC',multi_label = True)
-
     model = Model([i,j],f)
     model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy', AUROC, AUPRC])
     return model
@@ -232,23 +247,23 @@ def indices_predicting(leads):
 
 def epoch_data(leads,model,train_dataset):
     if leads==twelve_leads:
-        model.fit(train_dataset, epochs=19)
+        model.fit(train_dataset, epochs=17)
         K.set_value(model.optimizer.learning_rate, 0.0001)
         model.fit(train_dataset,epochs=4)
     elif leads==six_leads:
-        model.fit(train_dataset, epochs=14)
-        K.set_value(model.optimizer.learning_rate, 0.0001)
-        model.fit(train_dataset,epochs=5)
-    elif leads==four_leads:
-        model.fit(train_dataset, epochs=18)
-        K.set_value(model.optimizer.learning_rate, 0.0001)
-        model.fit(train_dataset,epochs=2)
-    elif leads==three_leads:
-        model.fit(train_dataset, epochs=20)
+        model.fit(train_dataset, epochs=23)
         K.set_value(model.optimizer.learning_rate, 0.0001)
         model.fit(train_dataset,epochs=3)
-    else:
-        model.fit(train_dataset, epochs=22)
+    elif leads==four_leads:
+        model.fit(train_dataset, epochs=16)
         K.set_value(model.optimizer.learning_rate, 0.0001)
-        model.fit(train_dataset,epochs=5)
+        model.fit(train_dataset,epochs=6)
+    elif leads==three_leads:
+        model.fit(train_dataset, epochs=16)
+        K.set_value(model.optimizer.learning_rate, 0.0001)
+        model.fit(train_dataset,epochs=2)
+    else:
+        model.fit(train_dataset, epochs=15)
+        K.set_value(model.optimizer.learning_rate, 0.0001)
+        model.fit(train_dataset,epochs=2)
     return model
