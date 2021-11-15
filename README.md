@@ -2,9 +2,7 @@
 
 ## What's in this repository?
 
-This repository contains a simple example to illustrate how to format your Python entry for the Challenge. You can try it by running the following commands on any of the Challenge training sets. These commands should take a few minutes from start to finish on any recent personal computer.
-
-For this example, we implemented a random forest classifier that uses age, sex, and the root mean square of the ECG lead signals as features. You can use a different classifier, features, and software for your entry. This example is designed **not** not to score well, so you should **not** use it as a baseline for your model's performance.
+This repository contains the code submitted to the Physionet/CinC Challenge 2021 by the team NIMA. You can try it by running the following commands on any of the Challenge training sets. We have implemented a deep neural network architecture to perform multi-label classification of 26 cardiac abnormalities from 12-lead, and reduced lead ECG data.
 
 This code uses four main scripts, described below, to train and test your model for the 2021 Challenge.
 
