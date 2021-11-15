@@ -1,8 +1,10 @@
-# Python example code for the PhysioNet/Computing in Cardiology Challenge 2021
+# Multi-label Cardiac Abnormality Classification from Electrocardiogram using Deep Convolutional Neural Networks - Physionet/CinC Challenge 2021
 
 ## What's in this repository?
 
 This repository contains the code submitted to the Physionet/CinC Challenge 2021 by the team NIMA. You can try it by running the following commands on any of the Challenge training sets. We have implemented a deep neural network architecture to perform multi-label classification of 26 cardiac abnormalities from 12-lead, and reduced lead ECG data.
+
+**This repository was cloned from the Example python classifier provided by the organizers for the challenge and then edited. Link: https://github.com/physionetchallenges/python-classifier-2021. The main code can be found in team_code.py. From here onwards this readme has the same information given by the challenge organizers. It will help you on how to run the code.**
 
 This code uses four main scripts, described below, to train and test your model for the 2021 Challenge.
 
@@ -28,7 +30,7 @@ where `labels` is a folder containing files with one or more labels for each ECG
 ## Which scripts I can edit?
 
 We will run the `train_model.py` and `test_model.py` scripts to run your training code and testing code, so please check these scripts and the functions that they call.
-Our example code uses four main scripts to train and test your model for the 2021 Challenge:
+Our code uses four main scripts to train and test your model for the 2021 Challenge:
 
 Please edit the following script to add your training and testing code:
 
