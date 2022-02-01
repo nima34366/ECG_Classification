@@ -4,7 +4,11 @@
 
 This repository contains the code submitted to the Physionet/CinC Challenge 2021 by the team NIMA. You can try it by running the following commands on any of the Challenge training sets. We have implemented a deep neural network architecture to perform multi-label classification of 26 cardiac abnormalities from 12-lead, and reduced lead ECG data.
 
+We would appreciate a citation to our paper, https://ieeexplore.ieee.org/abstract/document/9662787/ (PDF: https://www.cinc.org/archives/2021/pdf/CinC2021-352.pdf), if you use our work in your research.
+
 **This repository was cloned from the Example python classifier provided by the organizers for the challenge and then edited. Link: https://github.com/physionetchallenges/python-classifier-2021. The main code can be found in team_code.py. From here onwards this readme has the same information given by the challenge organizers. It will help you on how to run the code.**
+
+
 
 This code uses four main scripts, described below, to train and test your model for the 2021 Challenge.
 
